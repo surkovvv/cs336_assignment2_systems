@@ -73,18 +73,19 @@ def run_profile_timeit(
     return result
 
 
-def generate_data(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    data = torch.randint(high=VOCAB_SIZE, size=(BATCH_SIZE, CONTEXT_LENGTH), device=device)
-    target = torch.randint(high=VOCAB_SIZE, size=(BATCH_SIZE, CONTEXT_LENGTH), device=device)
+def generate_data(device: torch.device, batch_size: int = BATCH_SIZE, context_len: int = CONTEXT_LENGTH) -> tuple[torch.Tensor, torch.Tensor]:
+    data = torch.randint(high=VOCAB_SIZE, size=(batch_size, context_len), device=device)
+    target = torch.randint(high=VOCAB_SIZE, size=(batch_size, context_len), device=device)
     return data, target
 
 
-def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str):
+def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str, batch_size: int, context_length: int):
     configs = []
     with open(path_to_configs) as f:
         for line in f:
             if line.strip(): 
                 config = json.loads(line)
+                config["context_length"] = context_length
                 configs.append(config)
 
     config_results = []
@@ -93,7 +94,7 @@ def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, out
     for config in configs:
         # model_config = ModelParams(**config)
         model = TransformerLM(**config, device=device)
-        batch, target = generate_data(device)
+        batch, target = generate_data(device, batch_size, context_length)
 
         additional_params = {"target_batch": target}
         if regime == 2:
@@ -113,7 +114,7 @@ def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, out
     df_rows = []
     for config, config_res in zip(configs, config_results):
         df_row = config
-        df_row["batch_size"] = BATCH_SIZE
+        df_row["batch_size"] = batch_size
         df_row["warmup_steps"] = w_steps
         df_row["n_steps"] = n_steps
 
@@ -150,8 +151,10 @@ if __name__ == "__main__":
     argparser.add_argument("--input", type=str, required=True)
     argparser.add_argument("--w_steps", type=int, default=5, required=False)
     argparser.add_argument("--n_steps", type=int, default=10, required=False)
+    argparser.add_argument("--bs", type=int, default=BATCH_SIZE, required=False)
+    argparser.add_argument("--context_length", type=int, default=CONTEXT_LENGTH, required=False)
     argparser.add_argument("--regime", type=int, choices=[0, 1, 2], default=0, required=True)
     argparser.add_argument("--output", type=str, required=True)
 
     parser = argparser.parse_args()
-    bench_all(parser.input, parser.w_steps, parser.n_steps, parser.regime, parser.output)
+    bench_all(parser.input, parser.w_steps, parser.n_steps, parser.regime, parser.output, parser.batch_size, parser.context_length)

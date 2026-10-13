@@ -1,0 +1,88 @@
+{
+  "jobs": [
+    {
+      "size": "small",
+      "context_length": 128,
+      "config": {
+        "d_model": 768,
+        "d_ff": 3072,
+        "num_layers": 12,
+        "num_heads": 12,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 128
+      }
+    },
+    {
+      "size": "small",
+      "context_length": 512,
+      "config": {
+        "d_model": 768,
+        "d_ff": 3072,
+        "num_layers": 12,
+        "num_heads": 12,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    },
+    {
+      "size": "small",
+      "context_length": 8192,
+      "config": {
+        "d_model": 768,
+        "d_ff": 3072,
+        "num_layers": 12,
+        "num_heads": 12,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 8192
+      }
+    },
+    {
+      "size": "xl",
+      "context_length": 128,
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 128
+      }
+    },
+    {
+      "size": "xl",
+      "context_length": 512,
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    },
+    {
+      "size": "xl",
+      "context_length": 2048,
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 2048
+      }
+    }
+  ],
+  "precision": "fp32",
+  "bs": 1,
+  "regime": 2,
+  "w_steps": 5,
+  "n_steps": 10,
+  "run_id": "20261013T181352Z-nsys-fp32-26d59ace"
+}
