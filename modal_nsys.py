@@ -39,7 +39,8 @@ def make_jobs(sizes, contexts, configs):
 
 @app.function(image=image, gpu="B200", cpu=4, memory=32768, timeout=3600,
               scaledown_window=2, max_containers=1, volumes={"/results": results_volume})
-def collect(jobs: list[dict], precision: str, bs: int, regime: int, warmup: int, steps: int, run_id: str):
+def collect(jobs: list[dict], precision: str, bs: int, regime: int, warmup: int, steps: int, run_id: str,
+            capture_api: bool = False):
     destination = Path("/results") / run_id
     destination.mkdir(parents=True, exist_ok=False)
     python = str(REMOTE_PROJECT / ".venv/bin/python")
@@ -52,7 +53,7 @@ def collect(jobs: list[dict], precision: str, bs: int, regime: int, warmup: int,
         "run_id": run_id, "environment": json.loads(probe.stdout.strip().splitlines()[-1]),
         "nsys_version": subprocess.check_output(["nsys", "--version"], text=True).strip(),
         "precision": precision, "batch_size": bs, "regime": regime,
-        "warmup_steps": warmup, "measurement_steps": steps,
+        "warmup_steps": warmup, "measurement_steps": steps, "capture_api": capture_api,
         "profiler_sha256": hashlib.sha256((REMOTE_PROJECT / "cs336_systems/profile_code.py").read_bytes()).hexdigest(),
         "jobs": [],
     }
@@ -65,6 +66,7 @@ def collect(jobs: list[dict], precision: str, bs: int, regime: int, warmup: int,
         command = [
             "nsys", "profile", "--trace=cuda-sw,nvtx,osrt", "--sample=none", "--cpuctxsw=none",
             "--pytorch=functions-trace,autograd-nvtx", "--force-overwrite=true", "--export=sqlite",
+            *(["--capture-range=cudaProfilerApi", "--capture-range-end=stop"] if capture_api else []),
             "--output", str(prefix), "--", python, "cs336_systems/profile_code_nsys.py",
             "--input", str(config_path), "--output", str(prefix), "--bs", str(bs),
             "--context_length", str(job["context_length"]), "--regime", str(regime),
@@ -108,9 +110,11 @@ def collect(jobs: list[dict], precision: str, bs: int, regime: int, warmup: int,
 
 @app.local_entrypoint()
 def main(sizes: str = "small,xl", contexts: str = "", precision: str = "fp32", bs: int = 1,
-         regime: int = 2, w_steps: int = 5, n_steps: int = 10):
+         regime: int = 2, w_steps: int = 5, n_steps: int = 10, capture_api: bool = False):
     if precision not in ("fp32", "bf16") or bs < 1 or regime not in (0, 1, 2) or w_steps < 0 or n_steps < 2:
         raise ValueError("Invalid precision, batch size, regime, or step count")
+    if capture_api and regime == 2:
+        raise ValueError("Use --regime 0 or 1 with --capture-api to exclude optimizer kernels from the measurement loop")
     configs = [json.loads(line) for line in (PROJECT / "benches/model_configs.jsonl").read_text().splitlines() if line.strip()]
     if len(configs) != 5:
         raise ValueError("Expected five configs in table order")
@@ -120,10 +124,10 @@ def main(sizes: str = "small,xl", contexts: str = "", precision: str = "fp32", b
     output.mkdir(parents=True, exist_ok=False)
     (output / "request.json").write_text(json.dumps({
         "jobs": jobs, "precision": precision, "bs": bs, "regime": regime,
-        "w_steps": w_steps, "n_steps": n_steps, "run_id": run_id,
+        "w_steps": w_steps, "n_steps": n_steps, "run_id": run_id, "capture_api": capture_api,
     }, indent=2) + "\n")
     print(f"Results: {output}\nVolume: cs336-profile-results/{run_id}", flush=True)
-    metadata = collect.remote(jobs, precision, bs, regime, w_steps, n_steps, run_id)
+    metadata = collect.remote(jobs, precision, bs, regime, w_steps, n_steps, run_id, capture_api)
     for name in metadata["files"]:
         with (output / name).open("wb") as target:
             for chunk in results_volume.read_file(f"/{run_id}/{name}"):

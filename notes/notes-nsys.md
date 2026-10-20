@@ -69,3 +69,95 @@ Times are in milliseconds, reported as mean ± standard deviation.
 | xl | 303.35 ± 25.47 | 317.691778 ± 16.451605 | 14.34 | 4.7% |
 
 **Answer.** At context length 512, the profiled forward times are of the same order of magnitude as the earlier Python standard-library measurements, but are higher by 9.63 ms (44.5%) for small and 14.34 ms (4.7%) for xl. My hypothesis is that profiling adds a similar absolute overhead in both cases, which accounts for a larger fraction of the shorter forward pass in the small model.
+
+### (b) GPU kernel summary
+
+FP32, batch size 4. Instances and total GPU times are summed over 10 measured iterations. Each row shows the kernel with the highest cumulative GPU time in that pass. Forward + backward includes loss computation.
+
+**Answer.** I summed the GPU kernel times over 10 forward passes and 10 forward + backward passes, with the leading kernels and their invocation counts shown below for each configuration. The leading kernel does not always stay the same: its full name matches for `xl_seq128`, while `small_seq128` changes from the `tnn` variant to `nnn`.
+
+#### small_seq128
+
+| Pass | Kernel name | Instances | Total GPU time (ms) | GPU time (%) |
+|:---|:---|---:|---:|---:|
+| Forward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x32x16_1x1x1_3_tnn_align1_bias_f32_relu` | 600 | 22.116193 | — |
+| Forward + backward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x32x16_1x1x1_3_nnn_align1_bias_f32_relu` | 960 | 31.993063 | 18.8 |
+
+#### small_seq512
+
+| Pass | Kernel name | Instances | Total GPU time (ms) | GPU time (%) |
+|:---|:---|---:|---:|---:|
+| Forward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x128x16_1x1x1_3_tnn_align1_bias_f32_relu` | 250 | 53.699046 | — |
+| Forward + backward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x64x16_1x1x1_3_nnn_align1_bias_f32_relu` | 970 | 110.578643 | 23.4 |
+
+#### small_seq4096
+
+| Pass | Kernel name | Instances | Total GPU time (ms) | GPU time (%) |
+|:---|:---|---:|---:|---:|
+| Forward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_128x128x16_1x1x1_3_tnn_align1_bias_f32_relu` | 250 | 359.921876 | — |
+| Forward + backward | `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | 1960 | 1257.656005 | 15.9 |
+
+#### xl_seq128
+
+| Pass | Kernel name | Instances | Total GPU time (ms) | GPU time (%) |
+|:---|:---|---:|---:|---:|
+| Forward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x32x16_1x1x1_3_tnn_align1_bias_f32_relu` | 1600 | 469.669784 | — |
+| Forward + backward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x32x16_1x1x1_3_tnn_align1_bias_f32_relu` | 1600 | 468.422099 | 17.3 |
+
+#### xl_seq512
+
+| Pass | Kernel name | Instances | Total GPU time (ms) | GPU time (%) |
+|:---|:---|---:|---:|---:|
+| Forward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_128x128x16_1x1x1_3_tnn_align1_bias_f32_relu` | 650 | 1245.339287 | — |
+| Forward + backward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_64x64x16_1x1x1_3_nnn_align1_bias_f32_relu` | 1930 | 1867.836112 | 21.5 |
+
+#### xl_seq1024
+
+| Pass | Kernel name | Instances | Total GPU time (ms) | GPU time (%) |
+|:---|:---|---:|---:|---:|
+| Forward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_128x64x16_1x1x1_3_tnn_align1_bias_f32_relu` | 1600 | 2447.365485 | — |
+| Forward + backward | `cutlass3x_sm100_simt_sgemm_f32_f32_f32_f32_f32_128x64x16_1x1x1_3_nnn_align1_bias_f32_relu` | 1930 | 3435.970532 | 19.6 |
+
+The forward summaries did not include GPU time percentages (—).
+
+### (c) Other kernels in the forward pass
+
+**Answer.** The forward profiles include elementwise multiplication, division and addition, as well as a vectorized multiplication kernel. The selected kernel names, invocation counts and total GPU times are listed below.
+
+FP32, batch size 4. These are selected rows from the forward top-5 results in the notebook. Instances and total GPU times are summed over 10 measured forward passes.
+
+#### small_seq128
+
+| Kernel name | Operation | Instances | Total GPU time (ms) |
+|:---|:---|---:|---:|
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise multiplication | 1210 | 3.245927 |
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase &)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 7)]::operator ()() const::[lambda(float) (instance 1)]>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Copy | 960 | 2.820553 |
+
+#### small_seq512
+
+| Kernel name | Operation | Instances | Total GPU time (ms) |
+|:---|:---|---:|---:|
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise division | 370 | 5.999146 |
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise multiplication | 1210 | 5.701963 |
+
+#### small_seq4096
+
+| Kernel name | Operation | Instances | Total GPU time (ms) |
+|:---|:---|---:|---:|
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise division | 490 | 320.358167 |
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::<unnamed>::masked_fill_kernel(at::TensorIterator &, const c10::Scalar &)::[lambda() (instance 1)]::operator ()() const::[lambda() (instance 7)]::operator ()() const::[lambda(float, bool) (instance 1)]>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Masked fill | 240 | 278.225075 |
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise addition | 240 | 268.981014 |
+
+#### xl_seq128
+
+| Kernel name | Operation | Instances | Total GPU time (ms) |
+|:---|:---|---:|---:|
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise multiplication | 3210 | 13.810398 |
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase &)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 7)]::operator ()() const::[lambda(float) (instance 1)]>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Copy | 2560 | 12.521655 |
+| `void at::native::vectorized_elementwise_kernel<(int)4, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float>>, std::array<char *, (unsigned long)3>>(int, T2, T3)` | Elementwise multiplication (vectorized) | 1290 | 6.500979 |
+
+#### xl_seq1024
+
+| Kernel name | Operation | Instances | Total GPU time (ms) |
+|:---|:---|---:|---:|
+| `void at::native::elementwise_kernel<(int)128, (int)2, void at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::DivFunctor<float>>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)` | Elementwise division | 970 | 158.272109 |
