@@ -93,10 +93,12 @@ def collect(jobs: list[dict], precision: str, bs: int, regime: int, warmup: int,
         if code == 0 and report.exists() and result["kernel_events"] > 0:
             stats = subprocess.run([
                 "nsys", "stats", "--report=cuda_gpu_kern_sum,cuda_api_sum,nvtx_sum",
-                "--format=csv", str(report),
+                "--format=csv", str(database),
             ], capture_output=True, text=True)
             (destination / (stem + ".stats.txt")).write_text(stats.stdout + stats.stderr)
             result["stats_exit_code"] = stats.returncode
+            if stats.returncode != 0:
+                result["error"] = f"nsys stats failed (exit {stats.returncode}); see {stem}.stats.txt"
         else:
             result["error"] = "Profiling failed, report missing, or no CUDA kernel events captured"
         metadata["jobs"].append(result)
@@ -113,8 +115,6 @@ def main(sizes: str = "small,xl", contexts: str = "", precision: str = "fp32", b
          regime: int = 2, w_steps: int = 5, n_steps: int = 10, capture_api: bool = False):
     if precision not in ("fp32", "bf16") or bs < 1 or regime not in (0, 1, 2) or w_steps < 0 or n_steps < 2:
         raise ValueError("Invalid precision, batch size, regime, or step count")
-    if capture_api and regime == 2:
-        raise ValueError("Use --regime 0 or 1 with --capture-api to exclude optimizer kernels from the measurement loop")
     configs = [json.loads(line) for line in (PROJECT / "benches/model_configs.jsonl").read_text().splitlines() if line.strip()]
     if len(configs) != 5:
         raise ValueError("Expected five configs in table order")

@@ -27,7 +27,14 @@ def run_profile_timeit(
 ) -> dict[str, list[float]]:
 
     for _ in range(warmup_steps):
-        model(batch)
+        if regime == 0:
+            with torch.no_grad():
+                model(batch)
+        else:
+            model(batch)
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
 
     forward_times = []
     if regime >= 1:
@@ -35,10 +42,18 @@ def run_profile_timeit(
     if regime == 2:
         optimizer_times = []
 
+    if torch.cuda.is_available():
+        torch.cuda.profiler.start()
+
     for step in trange(steps):
         time_before = dt()
         print(f"before {step} forward: ", torch.cuda.memory_allocated())
-        logits = model(batch)
+        if regime == 0:
+            with torch.no_grad():
+                logits = model(batch)
+        else:
+            logits = model(batch)
+
         forward_times.append(dt() - time_before)
         print(f"after {step} forward: ", torch.cuda.memory_allocated())
         
@@ -61,6 +76,9 @@ def run_profile_timeit(
         
         if torch.cuda.is_available():
             torch.cuda.synchronize()
+
+    if torch.cuda.is_available():
+        torch.cuda.profiler.stop()
 
     result = {
         "forward": forward_times

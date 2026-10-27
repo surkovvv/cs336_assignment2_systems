@@ -1,0 +1,7 @@
+
+WARNING: Existing SQLite export found: /results/20261021T200854Z-nsys-fp32-b671f46a/small_seq512_bs4_fp32.sqlite
+         File is older than input file: /results/20261021T200854Z-nsys-fp32-b671f46a/small_seq512_bs4_fp32.nsys-rep
+         Use --force-export=true to update export file.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.
