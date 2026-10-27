@@ -3,41 +3,21 @@
 import hashlib
 import json
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 import modal
 
-PROJECT = Path(__file__).resolve().parent
-REMOTE_PROJECT = Path("/workspace/assignment2-systems")
+from modal_common import PROJECT, REMOTE_PROJECT, image
+
 VOLUME_NAME = "cs336-profile-results"
 SIZE_NAMES = ("small", "medium", "large", "xl", "10B")
 
 
-def build_image():
-    image = modal.Image.debian_slim(python_version="3.13").uv_pip_install("uv==0.12.8")
-    if not modal.is_local():
-        return image
-    basics = PROJECT.parent / "stanford-cs336-assignment1-basics"
-    for local, remote in ((PROJECT, REMOTE_PROJECT), (basics, REMOTE_PROJECT.parent / basics.name)):
-        for name in ("pyproject.toml", "README.md"):
-            image = image.add_local_file(local / name, str(remote / name), copy=True)
-        package = "cs336_systems" if local == PROJECT else "cs336_basics"
-        image = image.add_local_dir(
-            local / package, str(remote / package), copy=True,
-            ignore=["**/__pycache__/**", "**/*.pyc"],
-        )
-    return (
-        image.add_local_file(PROJECT / "uv.lock", str(REMOTE_PROJECT / "uv.lock"), copy=True)
-        .run_commands(f"cd {REMOTE_PROJECT} && uv sync --frozen --no-dev")
-        .env({"PYTHONUNBUFFERED": "1", "WANDB_MODE": "disabled"})
-    )
 
 
 app = modal.App("cs336-profile")
-image = build_image()
 results_volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 
 
@@ -46,7 +26,7 @@ results_volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
     timeout=1800, scaledown_window=2, max_containers=1,
     volumes={"/results": results_volume},
 )
-def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, run_id: str, precision: str = "fp32"):
+def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, run_id: str, precision: str = "fp32", use_autocast: bool = False):
     """Each model gets its own Python process; timing code stays in profile_code.py."""
     import csv
 
@@ -67,7 +47,7 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
     print(json.dumps(environment, indent=2), flush=True)
     metadata = {
         "run_id": run_id, "environment": environment, "precision": precision,
-        "regime": regime, "w_steps": w_steps, "n_steps": n_steps,
+        "regime": regime, "w_steps": w_steps, "n_steps": n_steps, "autocast": use_autocast,
         "profile_sha256": hashlib.sha256(
             (REMOTE_PROJECT / "cs336_systems/profile_code.py").read_bytes()
         ).hexdigest(),
@@ -91,6 +71,8 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
             "--w_steps", str(w_steps), "--n_steps", str(n_steps),
             "--output", str(destination / size),
         ]
+        if use_autocast:
+            command.append("--autocast")
         print(f"\nRunning {size}: precision={precision}, regime={regime}, warmup={w_steps}, steps={n_steps}", flush=True)
         with (destination / f"{size}.log").open("w") as log:
             process = subprocess.Popen(
@@ -134,7 +116,7 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
 def main(
     sizes: str = "small", regime: int = 2, w_steps: int = 5, n_steps: int = 10,
     input: str = "benches/model_configs.jsonl", output: str = "benches/modal_runs",
-    precision: str = "fp32",
+    precision: str = "fp32", use_autocast: bool = False
 ):
     if precision not in ("fp32", "bf16"):
         raise ValueError("precision must be fp32 or bf16")
@@ -151,11 +133,11 @@ def main(
     local_output.mkdir(parents=True, exist_ok=False)
     jobs = [{"size": s, "config": configs[SIZE_NAMES.index(s)]} for s in selected]
     (local_output / "request.json").write_text(json.dumps({
-        "run_id": run_id, "jobs": jobs, "regime": regime, "w_steps": w_steps, "n_steps": n_steps, "precision": precision,
+        "run_id": run_id, "jobs": jobs, "regime": regime, "w_steps": w_steps, "n_steps": n_steps, "precision": precision, "autocast": use_autocast,
     }, indent=2) + "\n")
     print(f"Local results: {local_output}")
     print(f"Persistent results: Modal Volume {VOLUME_NAME}/{run_id}", flush=True)
-    response = run_benchmarks.remote(jobs, regime, w_steps, n_steps, run_id, precision)
+    response = run_benchmarks.remote(jobs, regime, w_steps, n_steps, run_id, precision, use_autocast)
     for name, content in response["files"].items():
         (local_output / name).write_bytes(content)
     print(f"Downloaded results to {local_output}")

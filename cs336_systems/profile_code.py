@@ -9,6 +9,7 @@ import statistics
 from tqdm import trange
 from timeit import default_timer as dt
 from argparse import ArgumentParser
+from contextlib import nullcontext
 
 BATCH_SIZE = 4
 CONTEXT_LENGTH = 512
@@ -23,7 +24,8 @@ def run_profile_timeit(
     steps: int,
     regime: int,
     optimizer: torch.optim.Optimizer | None = None,
-    target_batch: torch.Tensor | None = None
+    target_batch: torch.Tensor | None = None,
+    autocast: bool = False
 ) -> dict[str, list[float]]:
 
     for _ in range(warmup_steps):
@@ -48,17 +50,18 @@ def run_profile_timeit(
     for step in trange(steps):
         time_before = dt()
         print(f"before {step} forward: ", torch.cuda.memory_allocated())
-        if regime == 0:
-            with torch.no_grad():
-                logits = model(batch)
-        else:
+        
+        manager1 = torch.autocast(device_type=batch.device.type, dtype=torch.bfloat16) if autocast else nullcontext()
+        manager2 = torch.no_grad() if regime == 0 else nullcontext()
+        with manager1, manager2:
             logits = model(batch)
 
         forward_times.append(dt() - time_before)
         print(f"after {step} forward: ", torch.cuda.memory_allocated())
         
         if regime >= 1:
-            loss = cross_entropy(logits, target_batch)
+            with manager1:
+                loss = cross_entropy(logits, target_batch)
             time_before = dt()
             print(f"before {step} backward: ", torch.cuda.memory_allocated())
             if regime == 2:
@@ -97,7 +100,7 @@ def generate_data(device: torch.device, batch_size: int = BATCH_SIZE, context_le
     return data, target
 
 
-def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str, batch_size: int, context_length: int):
+def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str, batch_size: int, context_length: int, autocast: bool):
     configs = []
     with open(path_to_configs) as f:
         for line in f:
@@ -124,7 +127,8 @@ def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, out
             batch, 
             warmup_steps=w_steps, 
             steps=n_steps, 
-            regime=regime, 
+            regime=regime,
+            autocast=autocast,
             **additional_params
         )
         config_results.append(config_result)
@@ -172,7 +176,8 @@ if __name__ == "__main__":
     argparser.add_argument("--bs", type=int, default=BATCH_SIZE, required=False)
     argparser.add_argument("--context_length", type=int, default=CONTEXT_LENGTH, required=False)
     argparser.add_argument("--regime", type=int, choices=[0, 1, 2], default=0, required=True)
+    argparser.add_argument("--autocast", action="store_true", default=False, required=False)
     argparser.add_argument("--output", type=str, required=True)
 
     parser = argparser.parse_args()
-    bench_all(parser.input, parser.w_steps, parser.n_steps, parser.regime, parser.output, parser.batch_size, parser.context_length)
+    bench_all(parser.input, parser.w_steps, parser.n_steps, parser.regime, parser.output, parser.bs, parser.context_length, autocast=parser.autocast)
