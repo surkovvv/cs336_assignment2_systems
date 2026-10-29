@@ -1,0 +1,40 @@
+{
+  "run_id": "20261029T173844Z-fp32-bf0bf797",
+  "jobs": [
+    {
+      "size": "xl",
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 128
+      }
+    },
+    {
+      "size": "xl",
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 2048
+      }
+    }
+  ],
+  "regime": 0,
+  "w_steps": 5,
+  "n_steps": 10,
+  "precision": "fp32",
+  "autocast": false,
+  "profile_memory": true,
+  "batch_size": 1,
+  "contexts": [
+    128,
+    2048
+  ]
+}

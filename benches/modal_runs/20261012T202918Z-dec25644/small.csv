@@ -1,0 +1,2 @@
+d_model,d_ff,num_layers,num_heads,theta,vocab_size,context_length,batch_size,warmup_steps,n_steps,forward_mean_ms,forward_std_ms,backward_mean_ms,backward_std_ms,forward-backward_mean_ms,forward-backward_std_ms,optimizer_mean_ms,optimizer_std_ms,forward-backward-optimizer_mean_ms,forward-backward-optimizer_std_ms
+768,3072,12,12,10000.0,10000,512,4,5,10,0.021631548500000087,0.0039947866381508075,0.03385648799999981,0.03354667796700612,0.05548803649999989,0.03318530426982384,0.01321572160000013,0.0007848156126277005,0.06870375810000003,0.03329547580920862

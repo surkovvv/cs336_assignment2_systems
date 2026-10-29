@@ -1,0 +1,36 @@
+{
+  "run_id": "20261012T211607Z-bf16-a7a70461",
+  "environment": {
+    "python": "3.13.3 (main, May 21 2025, 23:35:07) [GCC 12.2.0]",
+    "torch": "2.11.0+cu130",
+    "cuda": "13.0",
+    "gpu": "NVIDIA B200",
+    "gpu_memory_bytes": 191490555904,
+    "basics": "/workspace/stanford-cs336-assignment1-basics/cs336_basics/__init__.py",
+    "systems": "/workspace/assignment2-systems/cs336_systems/__init__.py"
+  },
+  "precision": "bf16",
+  "regime": 2,
+  "w_steps": 5,
+  "n_steps": 10,
+  "profile_sha256": "94f6803e03a61db6afb0148b9015daa692d05f7cf1ce932d2c0b8c76a090b270",
+  "lock_sha256": "ab1cac6eb15ee5551c47ab1074254bd8fc623d01b7974b50aa20c75766afbae3",
+  "jobs": [
+    {
+      "size": "10B",
+      "config": {
+        "d_model": 4608,
+        "d_ff": 12288,
+        "num_layers": 50,
+        "num_heads": 36,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      },
+      "exit_code": 0
+    }
+  ],
+  "note": "Timing columns are emitted unchanged by the student's profiler.",
+  "entrypoint": "profile_code_bf16.py",
+  "entrypoint_sha256": "43a001c18fd4fde97fcb655c4770cb3b9485e51b241567b9da5cfa148d13f1aa"
+}

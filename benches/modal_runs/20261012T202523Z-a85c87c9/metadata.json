@@ -1,0 +1,34 @@
+{
+  "run_id": "20261012T202523Z-a85c87c9",
+  "environment": {
+    "python": "3.13.3 (main, May 21 2025, 23:35:07) [GCC 12.2.0]",
+    "torch": "2.11.0+cu130",
+    "cuda": "13.0",
+    "gpu": "NVIDIA B200",
+    "gpu_memory_bytes": 191503138816,
+    "basics": "/workspace/stanford-cs336-assignment1-basics/cs336_basics/__init__.py",
+    "systems": "/workspace/assignment2-systems/cs336_systems/__init__.py"
+  },
+  "regime": 2,
+  "w_steps": 1,
+  "n_steps": 2,
+  "profile_sha256": "3441a6db5e67e998dc81f74a70c40adee82aaaf6894e100227a73ff35d2963ad",
+  "lock_sha256": "ab1cac6eb15ee5551c47ab1074254bd8fc623d01b7974b50aa20c75766afbae3",
+  "jobs": [
+    {
+      "size": "small",
+      "config": {
+        "d_model": 768,
+        "d_ff": 3072,
+        "num_layers": 12,
+        "num_heads": 12,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      },
+      "exit_code": 0,
+      "error": "Expected one result row, received 0 in small.csv"
+    }
+  ],
+  "note": "Timing columns are emitted unchanged by the student's profiler."
+}

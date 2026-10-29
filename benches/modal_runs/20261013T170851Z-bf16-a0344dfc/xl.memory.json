@@ -1,0 +1,10 @@
+{
+  "precision": "bf16",
+  "parameter_dtype": "bfloat16",
+  "gradient_dtype": "bfloat16",
+  "adamw_moment_dtype": "bfloat16",
+  "autocast": false,
+  "fp32_master_weights": false,
+  "max_memory_allocated_bytes": 43198940672,
+  "max_memory_reserved_bytes": 45250248704
+}

@@ -1,0 +1,68 @@
+{
+  "run_id": "20261012T202918Z-dec25644",
+  "jobs": [
+    {
+      "size": "small",
+      "config": {
+        "d_model": 768,
+        "d_ff": 3072,
+        "num_layers": 12,
+        "num_heads": 12,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    },
+    {
+      "size": "medium",
+      "config": {
+        "d_model": 1024,
+        "d_ff": 4096,
+        "num_layers": 24,
+        "num_heads": 16,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    },
+    {
+      "size": "large",
+      "config": {
+        "d_model": 1280,
+        "d_ff": 5120,
+        "num_layers": 36,
+        "num_heads": 20,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    },
+    {
+      "size": "xl",
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    },
+    {
+      "size": "10B",
+      "config": {
+        "d_model": 4608,
+        "d_ff": 12288,
+        "num_layers": 50,
+        "num_heads": 36,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 512
+      }
+    }
+  ],
+  "regime": 2,
+  "w_steps": 5,
+  "n_steps": 10
+}
