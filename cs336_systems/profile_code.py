@@ -25,7 +25,8 @@ def run_profile_timeit(
     regime: int,
     optimizer: torch.optim.Optimizer | None = None,
     target_batch: torch.Tensor | None = None,
-    autocast: bool = False
+    autocast: bool = False,
+    profile_memory: bool = False
 ) -> dict[str, list[float]]:
 
     for _ in range(warmup_steps):
@@ -46,6 +47,9 @@ def run_profile_timeit(
 
     if torch.cuda.is_available():
         torch.cuda.profiler.start()
+        
+        if profile_memory:
+            torch.cuda.memory._record_memory_history(max_entries=1_000_000)
 
     for step in trange(steps):
         time_before = dt()
@@ -83,6 +87,10 @@ def run_profile_timeit(
     if torch.cuda.is_available():
         torch.cuda.profiler.stop()
 
+        if profile_memory:
+            torch.cuda.memory._dump_snapshot("memory_snapshot.pickle")
+            torch.cuda.memory._record_memory_history(enabled=None)
+
     result = {
         "forward": forward_times
     }
@@ -100,7 +108,7 @@ def generate_data(device: torch.device, batch_size: int = BATCH_SIZE, context_le
     return data, target
 
 
-def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str, batch_size: int, context_length: int, autocast: bool):
+def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str, batch_size: int, context_length: int, autocast: bool, profile_memory: bool):
     configs = []
     with open(path_to_configs) as f:
         for line in f:
@@ -129,6 +137,7 @@ def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, out
             steps=n_steps, 
             regime=regime,
             autocast=autocast,
+            profile_memory=profile_memory,
             **additional_params
         )
         config_results.append(config_result)
@@ -177,7 +186,18 @@ if __name__ == "__main__":
     argparser.add_argument("--context_length", type=int, default=CONTEXT_LENGTH, required=False)
     argparser.add_argument("--regime", type=int, choices=[0, 1, 2], default=0, required=True)
     argparser.add_argument("--autocast", action="store_true", default=False, required=False)
+    argparser.add_argument("--profile_memory", action="store_true", default=False, required=False)
     argparser.add_argument("--output", type=str, required=True)
 
     parser = argparser.parse_args()
-    bench_all(parser.input, parser.w_steps, parser.n_steps, parser.regime, parser.output, parser.bs, parser.context_length, autocast=parser.autocast)
+    bench_all(
+        parser.input, 
+        parser.w_steps, 
+        parser.n_steps, 
+        parser.regime, 
+        parser.output, 
+        parser.bs, 
+        parser.context_length, 
+        autocast=parser.autocast, 
+        profile_memory=parser.profile_memory
+    )

@@ -1,0 +1,3 @@
+size,precision,d_model,d_ff,num_layers,num_heads,theta,vocab_size,context_length,batch_size,warmup_steps,n_steps,forward_mean_ms,forward_std_ms
+xl,fp32,2560,10240,32,32,10000.0,10000,128,2,5,10,85.31082610000027,92.66820674746498
+xl,fp32,2560,10240,32,32,10000.0,10000,2048,2,5,10,260.3621621000002,26.019257067623105

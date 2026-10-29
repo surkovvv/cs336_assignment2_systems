@@ -42,17 +42,11 @@ Then run all five configurations with the default 5 warmup steps and 10 measured
 uv run modal run --profile surkovvv modal_profile.py --sizes all --regime 1 --use-autocast
 ```
 
-`--use-autocast` is a flag: do not append `True` or `False`. Omit it (or use `--no-use-autocast`) for the FP32 baseline. Keep `--precision fp32` (the default) for the autocast experiment: `--precision bf16` selects the separate full-BF16 entrypoint, which does not accept `--autocast`. Do not combine it with `--use-autocast`.
+`--use-autocast` is a flag: do not append `True` or `False`. Omit it (or use `--no-use-autocast`) for the FP32 baseline. Keep `--precision fp32` (the default) for the autocast experiment. `--precision bf16` selects the separate full-BF16 entrypoint; it also accepts the batch, context, autocast and memory-profiling options.
 
 The launcher forwards `use_autocast` to the remote function, which conditionally adds `--autocast` to the profiler command. The profiler parses that flag with `action="store_true"`.
 
-### Current profiler issues to resolve before measuring
-
-The following issues were found in the profiler on 2026-10-27. A correct launch command alone does not resolve them:
-
-- `AttributeError: 'Namespace' object has no attribute 'batch_size'`: the argument is named `--bs`, so argparse stores it as `bs`. The final call to `bench_all` must read that attribute, or the argument declaration must explicitly set its destination to `batch_size`.
-- `bench_all` receives `autocast` but its call to `run_profile_timeit` currently omits it. Forward the value explicitly; otherwise the timing function keeps its default `False`, even when the command includes the flag.
-- The autocast context currently receives `batch.device` as `device_type`. PyTorch expects a string such as `"cuda"`; the tensor device's `type` attribute supplies that string.
+### Warmup and metadata
 
 Warmup currently calls the model outside the autocast context. Account for that when reviewing the experiment's warmup behavior.
 
@@ -74,14 +68,51 @@ Weights, gradients, and both moments together require approximately 95.61 GiB fo
 
 BF16 CSV/LaTeX files have a `precision` column. Each model also writes `.memory.json` with peak allocated/reserved GPU memory and the precision policy. Modal run IDs and metadata record the chosen precision; the default remains FP32. Timing logic is reused unchanged, including any diagnostic prints in your profiler.
 
+## GPU memory snapshots
+
+To save separate snapshots for XL with context lengths 128 and 1024:
+
+```sh
+uv run modal run --profile surkovvv modal_profile.py \
+  --sizes xl --contexts 128,1024 --bs 4 \
+  --regime 2 --profile-memory
+```
+
+`--contexts` applies each listed length to every selected model size. If omitted, each model uses its configured context length. `--bs` defaults to 4. Omit `--profile-memory` for ordinary timing runs.
+
+Each configuration has its own result directory:
+
+```text
+benches/modal_runs/<run_id>/
+  request.json
+  metadata.json
+  combined.csv
+  xl_seq128_bs4_fp32/
+    config.jsonl
+    profile.csv
+    profile.tex
+    profile.log
+    memory_snapshot.pickle
+  xl_seq1024_bs4_fp32/
+    config.jsonl
+    profile.csv
+    profile.tex
+    profile.log
+    memory_snapshot.pickle
+```
+
+The launcher passes `--profile_memory` to the profiler. After each subprocess finishes, it moves the profiler's fixed-name `memory_snapshot.pickle` into that configuration's result directory before starting the next configuration. The profiler's snapshot code and timing logic remain unchanged.
+
+The same directory structure is retained on the Modal Volume and downloaded locally. Downloads stream files in chunks, including large memory snapshots. The request and metadata record `profile_memory`, batch size and context lengths; each job records its snapshot path. A successful process that produces no requested snapshot is reported as a failed job.
+
 ## Outputs
 
-Each invocation creates a unique directory under `benches/modal_runs/`. Files include per-model `.csv`, `.tex`, `.jsonl`, and `.log`; `combined.csv` adds a model-size column to successful results. `metadata.json` records GPU, available GPU memory, Python, PyTorch, CUDA, package import locations, profiler/lock hashes, parameters, and exit codes. `request.json` records the local request even if the remote call fails.
+Each invocation creates a unique directory under `benches/modal_runs/`. Each configuration has a subdirectory named `<size>_seq<context>_bs<batch>_<precision>` containing `profile.csv`, `profile.tex`, `config.jsonl`, and `profile.log`, plus a snapshot when requested. The top-level `combined.csv` adds a model-size column to successful results. `metadata.json` records GPU, available GPU memory, Python, PyTorch, CUDA, package import locations, profiler/lock hashes, parameters, and exit codes. `request.json` records the local request even if the remote call fails.
 
 The same remote files persist in the Modal Volume `cs336-profile-results` under the printed run ID. If the local connection fails, retrieve a result manually, replacing RUN_ID:
 
 ```sh
-uv run modal volume get --profile surkovvv cs336-profile-results /RUN_ID/small.csv benches/recovered_small.csv
+uv run modal volume get --profile surkovvv cs336-profile-results /RUN_ID/xl_seq128_bs4_fp32/memory_snapshot.pickle benches/recovered_snapshot.pickle
 ```
 
 The launcher uploads only the project/package files it needs. It does not upload your `.venv`, datasets, training checkpoints, or local credentials. The image installs dependencies from the existing `uv.lock` using `uv sync --frozen --no-dev`, with both repositories at matching relative paths.
@@ -90,7 +121,7 @@ The launcher uploads only the project/package files it needs. It does not upload
 
 The launcher currently requests one B200, four CPU cores, 32 GiB host RAM, and a 30-minute function timeout. Host RAM is distinct from GPU VRAM. The B200 gives more VRAM for large FP32 runs, but fitting the 10B full-training case is not guaranteed; activations, optimizer state, and temporary allocations also occupy VRAM.
 
-Each size runs in a separate subprocess. A failed model's log is preserved and other selected sizes are attempted. If the profiler exits successfully but writes an empty or unexpected CSV, the launcher stops the sequence and reports that output validation failed. It never invents timing rows or changes their units.
+Each size runs in a separate subprocess. A failed model's log is preserved and other selected sizes are attempted. If the profiler exits successfully but writes an empty or unexpected CSV or omits a requested memory snapshot, the launcher stops the sequence and reports that output validation failed. It never invents timing rows or changes their units.
 
 GPU containers scale down after two idle seconds; the app runs on demand via `modal run`. There is no permanent deployment or scheduled job.
 

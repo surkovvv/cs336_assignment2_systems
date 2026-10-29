@@ -21,9 +21,13 @@ def main():
     parser.add_argument("--regime", type=int, choices=(0, 1, 2), required=True)
     parser.add_argument("--w_steps", type=int, default=5)
     parser.add_argument("--n_steps", type=int, default=10)
+    parser.add_argument("--bs", type=int, default=profiler.BATCH_SIZE)
+    parser.add_argument("--context_length", type=int, default=profiler.CONTEXT_LENGTH)
+    parser.add_argument("--autocast", action="store_true")
+    parser.add_argument("--profile_memory", action="store_true")
     args = parser.parse_args()
-    if args.w_steps < 0 or args.n_steps < 2:
-        parser.error("w_steps must be >= 0; n_steps must be >= 2 for standard deviation")
+    if args.w_steps < 0 or args.n_steps < 2 or args.bs < 1 or args.context_length < 1:
+        parser.error("Use positive bs/context_length, w_steps >= 0 and n_steps >= 2")
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
         raise RuntimeError("This benchmark requires a CUDA GPU with BF16 support.")
 
@@ -40,14 +44,18 @@ def main():
     profiler.TransformerLM = make_bf16_model
     torch.cuda.reset_peak_memory_stats()
     try:
-        profiler.bench_all(args.input, args.w_steps, args.n_steps, args.regime, args.output)
+        profiler.bench_all(
+            args.input, args.w_steps, args.n_steps, args.regime, args.output,
+            batch_size=args.bs, context_length=args.context_length,
+            autocast=args.autocast, profile_memory=args.profile_memory,
+        )
     finally:
         profiler.TransformerLM = original_model
         torch.cuda.synchronize()
         memory = {
             "precision": "bf16", "parameter_dtype": "bfloat16",
             "gradient_dtype": "bfloat16", "adamw_moment_dtype": "bfloat16",
-            "autocast": False, "fp32_master_weights": False,
+            "autocast": args.autocast, "fp32_master_weights": False,
             "max_memory_allocated_bytes": torch.cuda.max_memory_allocated(),
             "max_memory_reserved_bytes": torch.cuda.max_memory_reserved(),
         }

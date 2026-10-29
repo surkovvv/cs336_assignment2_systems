@@ -1,0 +1,98 @@
+{
+  "run_id": "20261029T093110Z-fp32-27b4e338",
+  "environment": {
+    "python": "3.13.3 (main, May 21 2025, 23:35:07) [GCC 12.2.0]",
+    "torch": "2.11.0+cu130",
+    "cuda": "13.0",
+    "gpu": "NVIDIA H200",
+    "gpu_memory_bytes": 150101688320,
+    "basics": "/workspace/stanford-cs336-assignment1-basics/cs336_basics/__init__.py",
+    "systems": "/workspace/assignment2-systems/cs336_systems/__init__.py"
+  },
+  "precision": "fp32",
+  "regime": 2,
+  "w_steps": 5,
+  "n_steps": 10,
+  "autocast": true,
+  "profile_memory": true,
+  "batch_size": 1,
+  "profile_sha256": "3fa3f5976df5ef53a4b582ac2e7f2af239bb736e6498f1c9e0c15177f4ae3417",
+  "lock_sha256": "ab1cac6eb15ee5551c47ab1074254bd8fc623d01b7974b50aa20c75766afbae3",
+  "jobs": [
+    {
+      "size": "xl",
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 128
+      },
+      "batch_size": 1,
+      "output_dir": "xl_seq128_bs1_fp32",
+      "command": [
+        "/workspace/assignment2-systems/.venv/bin/python",
+        "cs336_systems/profile_code.py",
+        "--input",
+        "/results/20261029T093110Z-fp32-27b4e338/xl_seq128_bs1_fp32/config.jsonl",
+        "--regime",
+        "2",
+        "--w_steps",
+        "5",
+        "--n_steps",
+        "10",
+        "--output",
+        "/results/20261029T093110Z-fp32-27b4e338/xl_seq128_bs1_fp32/profile",
+        "--bs",
+        "1",
+        "--context_length",
+        "128",
+        "--autocast",
+        "--profile_memory"
+      ],
+      "exit_code": 0,
+      "memory_snapshot": "xl_seq128_bs1_fp32/memory_snapshot.pickle"
+    },
+    {
+      "size": "xl",
+      "config": {
+        "d_model": 2560,
+        "d_ff": 10240,
+        "num_layers": 32,
+        "num_heads": 32,
+        "theta": 10000.0,
+        "vocab_size": 10000,
+        "context_length": 2048
+      },
+      "batch_size": 1,
+      "output_dir": "xl_seq2048_bs1_fp32",
+      "command": [
+        "/workspace/assignment2-systems/.venv/bin/python",
+        "cs336_systems/profile_code.py",
+        "--input",
+        "/results/20261029T093110Z-fp32-27b4e338/xl_seq2048_bs1_fp32/config.jsonl",
+        "--regime",
+        "2",
+        "--w_steps",
+        "5",
+        "--n_steps",
+        "10",
+        "--output",
+        "/results/20261029T093110Z-fp32-27b4e338/xl_seq2048_bs1_fp32/profile",
+        "--bs",
+        "1",
+        "--context_length",
+        "2048",
+        "--autocast",
+        "--profile_memory"
+      ],
+      "exit_code": 0,
+      "memory_snapshot": "xl_seq2048_bs1_fp32/memory_snapshot.pickle"
+    }
+  ],
+  "note": "Timing columns are emitted unchanged by the student's profiler.",
+  "entrypoint": "profile_code.py",
+  "entrypoint_sha256": "3fa3f5976df5ef53a4b582ac2e7f2af239bb736e6498f1c9e0c15177f4ae3417"
+}
