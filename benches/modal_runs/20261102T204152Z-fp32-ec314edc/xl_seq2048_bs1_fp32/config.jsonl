@@ -1,0 +1,1 @@
+{"d_model": 2560, "d_ff": 10240, "num_layers": 32, "num_heads": 32, "theta": 10000.0, "vocab_size": 10000, "context_length": 2048}

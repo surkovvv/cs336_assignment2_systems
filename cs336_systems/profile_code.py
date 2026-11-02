@@ -108,7 +108,18 @@ def generate_data(device: torch.device, batch_size: int = BATCH_SIZE, context_le
     return data, target
 
 
-def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, output_path: str, batch_size: int, context_length: int, autocast: bool, profile_memory: bool):
+def bench_all(
+    path_to_configs: str, 
+    w_steps: int, 
+    n_steps: int, 
+    regime: int, 
+    output_path: str, 
+    batch_size: int, 
+    context_length: int, 
+    autocast: bool, 
+    profile_memory: bool,
+    block_size: int | None = None
+    ):
     configs = []
     with open(path_to_configs) as f:
         for line in f:
@@ -122,7 +133,7 @@ def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, out
     # configs = configs[:1]
     for config in configs:
         # model_config = ModelParams(**config)
-        model = TransformerLM(**config, device=device)
+        model = make_checkpointed_model(block_size, **config, device=device)  # TransformerLM(**config, device=device)
         batch, target = generate_data(device, batch_size, context_length)
 
         additional_params = {"target_batch": target}
@@ -177,6 +188,30 @@ def bench_all(path_to_configs: str, w_steps: int, n_steps: int, regime: int, out
     print(df)
 
 
+def make_checkpointed_model(block_size: int | None = None, **kwargs):
+    model = TransformerLM(**kwargs)
+    if block_size is None:
+        return model
+
+    def checkpointed_forward(*inputs, **options):
+        embs = model.embedding(*inputs, **options)
+
+        layer_output = embs
+        layers_block = []
+        for layer_idx, layer in enumerate(model.layers, start=1):
+            layers_block.append(layer)
+            if layer_idx % block_size == 0:
+                layer_output = torch.utils.checkpoint.checkpoint(torch.nn.Sequential(*layers_block), layer_output, use_reentrant=False)
+                layers_block = []
+
+        normalized_layers_output = model.last_norm(layer_output)
+        vocab_logits = model.lm_head(normalized_layers_output)
+        return vocab_logits
+
+    model.forward = checkpointed_forward
+    return model
+
+
 if __name__ == "__main__":
     argparser = ArgumentParser()
     argparser.add_argument("--input", type=str, required=True)
@@ -187,6 +222,7 @@ if __name__ == "__main__":
     argparser.add_argument("--regime", type=int, choices=[0, 1, 2], default=0, required=True)
     argparser.add_argument("--autocast", action="store_true", default=False, required=False)
     argparser.add_argument("--profile_memory", action="store_true", default=False, required=False)
+    argparser.add_argument("--block_size", type=int, default=None)
     argparser.add_argument("--output", type=str, required=True)
 
     parser = argparser.parse_args()
@@ -199,5 +235,6 @@ if __name__ == "__main__":
         parser.bs, 
         parser.context_length, 
         autocast=parser.autocast, 
-        profile_memory=parser.profile_memory
+        profile_memory=parser.profile_memory,
+        block_size=parser.block_size
     )

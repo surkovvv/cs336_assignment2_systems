@@ -25,7 +25,10 @@ def main():
     parser.add_argument("--context_length", type=int, default=profiler.CONTEXT_LENGTH)
     parser.add_argument("--autocast", action="store_true")
     parser.add_argument("--profile_memory", action="store_true")
+    parser.add_argument("--block_size", type=int, default=None)
     args = parser.parse_args()
+    if args.block_size is not None and args.block_size < 1:
+        parser.error("block_size must be positive")
     if args.w_steps < 0 or args.n_steps < 2 or args.bs < 1 or args.context_length < 1:
         parser.error("Use positive bs/context_length, w_steps >= 0 and n_steps >= 2")
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
@@ -48,6 +51,7 @@ def main():
             args.input, args.w_steps, args.n_steps, args.regime, args.output,
             batch_size=args.bs, context_length=args.context_length,
             autocast=args.autocast, profile_memory=args.profile_memory,
+            block_size=args.block_size,
         )
     finally:
         profiler.TransformerLM = original_model
