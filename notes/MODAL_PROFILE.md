@@ -142,3 +142,20 @@ uv run modal run --profile surkovvv modal_mixed_precision.py
 ```
 
 This wrapper uses CPU because the toy script currently creates CPU tensors. To make another wrapper, copy it, choose a distinct Modal app name, and replace the project-relative script path passed to `run_script`. Add a GPU requirement to the function decorator if the script needs CUDA. The runner uses the project's virtual environment, streams stdout/stderr, and raises if the script fails.
+
+## Checkpointing parameter
+
+Pass `--block-size N` to forward `--block_size N` to the existing profiler.
+Omit it (or use `--block-size 0`) to leave checkpointing disabled. The value is
+recorded in `request.json`, `metadata.json`, each job, and `combined.csv`.
+It works with both precision entrypoints and with `--use-autocast`.
+
+```sh
+uv run modal run --detach --profile surkovvv modal_profile.py \
+  --sizes xl --contexts 128,2048 --bs 1 --regime 2 \
+  --use-autocast --profile-memory --block-size 4
+```
+
+The launcher only forwards this setting; checkpointing behavior is implemented
+in the student's profiler. Its argparse option must use `type=int` with
+`default=None`, rather than `type=int | None`.

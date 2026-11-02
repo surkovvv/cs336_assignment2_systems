@@ -27,7 +27,7 @@ results_volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
     timeout=1800, scaledown_window=2, max_containers=1,
     volumes={"/results": results_volume},
 )
-def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, run_id: str, precision: str = "fp32", use_autocast: bool = False, profile_memory: bool = False, bs: int = 4):
+def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, run_id: str, precision: str = "fp32", use_autocast: bool = False, profile_memory: bool = False, bs: int = 4, block_size: int = 0):
     """Each model gets its own Python process; timing code stays in profile_code.py."""
     import csv
 
@@ -49,7 +49,7 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
     metadata = {
         "run_id": run_id, "environment": environment, "precision": precision,
         "regime": regime, "w_steps": w_steps, "n_steps": n_steps, "autocast": use_autocast,
-        "profile_memory": profile_memory, "batch_size": bs,
+        "profile_memory": profile_memory, "batch_size": bs, "block_size": block_size or None,
         "profile_sha256": hashlib.sha256(
             (REMOTE_PROJECT / "cs336_systems/profile_code.py").read_bytes()
         ).hexdigest(),
@@ -82,6 +82,8 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
             "--output", str(output_prefix),
             "--bs", str(bs), "--context_length", str(context_length),
         ]
+        if block_size:
+            command.extend(["--block_size", str(block_size)])
         if use_autocast:
             command.append("--autocast")
         if profile_memory:
@@ -98,7 +100,8 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
                 print(line, end="", flush=True)
             exit_code = process.wait()
         job_result = {"size": size, "config": config, "batch_size": bs,
-                      "output_dir": job_name, "command": command, "exit_code": exit_code}
+                      "output_dir": job_name, "command": command, "exit_code": exit_code,
+                      "block_size": block_size or None}
         if profile_memory:
             if snapshot_path.is_file():
                 snapshot = job_destination / "memory_snapshot.pickle"
@@ -114,7 +117,7 @@ def run_benchmarks(jobs: list[dict], regime: int, w_steps: int, n_steps: int, ru
                 job_result["error"] = f"Expected one result row, received {len(rows)} in {job_name}/profile.csv"
                 print(job_result["error"], flush=True)
             else:
-                combined_rows.extend({"size": size, "precision": precision, **row} for row in rows)
+                combined_rows.extend({"size": size, "precision": precision, **row, "block_size": block_size or None} for row in rows)
         (destination / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
         results_volume.commit()
         if job_result.get("error"):
@@ -138,12 +141,14 @@ def main(
     sizes: str = "small", regime: int = 2, w_steps: int = 5, n_steps: int = 10,
     input: str = "benches/model_configs.jsonl", output: str = "benches/modal_runs",
     precision: str = "fp32", use_autocast: bool = False,
-    profile_memory: bool = False, contexts: str = "", bs: int = 4
+    profile_memory: bool = False, contexts: str = "", bs: int = 4, block_size: int = 0
 ):
     if precision not in ("fp32", "bf16"):
         raise ValueError("precision must be fp32 or bf16")
     if regime not in (0, 1, 2) or w_steps < 0 or n_steps < 2 or bs < 1:
         raise ValueError("Use regime 0/1/2, positive bs, w_steps >= 0, n_steps >= 2 (standard deviation).")
+    if block_size < 0:
+        raise ValueError("block_size must be positive, or 0 to disable checkpointing.")
     context_lengths = [int(value.strip()) for value in contexts.split(",")] if contexts else None
     if context_lengths and (min(context_lengths) < 1 or len(set(context_lengths)) != len(context_lengths)):
         raise ValueError("contexts must contain distinct positive lengths")
@@ -163,11 +168,11 @@ def main(
     ]
     (local_output / "request.json").write_text(json.dumps({
         "run_id": run_id, "jobs": jobs, "regime": regime, "w_steps": w_steps, "n_steps": n_steps, "precision": precision, "autocast": use_autocast,
-        "profile_memory": profile_memory, "batch_size": bs, "contexts": context_lengths,
+        "profile_memory": profile_memory, "batch_size": bs, "block_size": block_size or None, "contexts": context_lengths,
     }, indent=2) + "\n")
     print(f"Local results: {local_output}")
     print(f"Persistent results: Modal Volume {VOLUME_NAME}/{run_id}", flush=True)
-    response = run_benchmarks.remote(jobs, regime, w_steps, n_steps, run_id, precision, use_autocast, profile_memory, bs)
+    response = run_benchmarks.remote(jobs, regime, w_steps, n_steps, run_id, precision, use_autocast, profile_memory, bs, block_size)
     for name in response["files"]:
         target = local_output / name
         target.parent.mkdir(parents=True, exist_ok=True)
