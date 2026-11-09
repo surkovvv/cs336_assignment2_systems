@@ -157,21 +157,22 @@ def flash_fwd_kernel(
         k_tile = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
         v_tile = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
         intermediate_result = tl.dot(q_tile, tl.trans(k_tile)) * scale
+
+        fake_keys_mask = tl.arange(0, K_TILE_SIZE) + K_TILE_SIZE * j >= N_KEYS
+        intermediate_result = tl.where(fake_keys_mask[None], -float('inf'), intermediate_result) # TODO - masking bro!!
+
         m_prev = m
         m = tl.maximum(m, tl.max(intermediate_result, axis=1))
 
-        intermediate_result = tl.exp(intermediate_result - m[None])
+        intermediate_result = tl.exp(intermediate_result - m[:, None])
         l = tl.exp(m_prev - m) * l + tl.sum(intermediate_result, axis=1)
-        if j == tl.cdiv(N_KEYS, K_TILE_SIZE) - 1:
-            intermediate_result = ... # TODO - masking bro!!
-        
-        output = tl.exp(m_prev - m)[None] * output + tl.dot(intermediate_result.to(v_tile.dtype), v_tile)
+        output = tl.exp(m_prev - m)[:, None] * output + tl.dot(intermediate_result.to(v_tile.dtype), v_tile)
 
         # advance v and k tiles
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
 
-    output = output / l[None]
+    output = output / l[:, None]
     l = m + tl.log(l)
     
     tl.store(O_block_ptr, output.to(O_block_ptr.type.element_ty), boundary_check=(0, 1))
