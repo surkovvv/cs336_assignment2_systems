@@ -178,4 +178,40 @@ def flash_fwd_kernel(
     tl.store(O_block_ptr, output.to(O_block_ptr.type.element_ty), boundary_check=(0, 1))
     tl.store(L_block_ptr, l, boundary_check=(0,))
 
+
+class TritonFlashAttention(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_residual: bool = False):
+        scale = 1 / math.sqrt(Q.size(dim=-1))
+        *input_shape, seq_len_q, d = Q.size()
+        O = torch.empty_like(Q)
+        L = torch.empty(*input_shape, dtype=Q.dtype, device=Q.device)
+
+        q_tile_size = 32
+        k_tile_size = 32
+
+        ctx.q_tile_size = q_tile_size
+        ctx.k_tile_size = k_tile_size
+
+        flash_fwd_kernel[(input_shape[0], triton.cdiv(seq_len_q, q_tile_size))](
+            Q, K, V,
+            O, L,
+            Q.stride(0), Q.stride(1), Q.stride(2),
+            K.stride(0), K.stride(1), K.stride(2),
+            V.stride(0), V.stride(1), V.stride(2),
+            O.stride(0), O.stride(1), O.stride(2),
+            L.stride(0), L.stride(1),
+            seq_len_q, K.size(dim=-2),
+            scale,
+            d,
+            q_tile_size,
+            k_tile_size,
+        )
+
+        ctx.save_for_backward(L, Q, K, V, O)
         
+        return O
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        return super().backward(ctx, *grad_outputs)
