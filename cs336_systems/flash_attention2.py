@@ -7,7 +7,7 @@ import triton.language as tl
 
 class PyTorchFlashAttention(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_residual: bool = False):
+    def forward(ctx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_causal: bool = False):
         """
         Q in R^{..., N_q x d}
         K, V in R^{..., N_k x d}
@@ -98,10 +98,11 @@ def flash_fwd_kernel(
     D: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
+    is_causal: tl.constexpr,
 ):
     # Program indices
-    query_tile_index = tl.program_id(0)
-    batch_index = tl.program_id(1)
+    query_tile_index = tl.program_id(1)
+    batch_index = tl.program_id(0)
 
     # Offset each pointer with the corresponding batch index
     # multiplied with the batch stride for each tensor
@@ -159,12 +160,19 @@ def flash_fwd_kernel(
         intermediate_result = tl.dot(q_tile, tl.trans(k_tile)) * scale
 
         fake_keys_mask = tl.arange(0, K_TILE_SIZE) + K_TILE_SIZE * j >= N_KEYS
-        intermediate_result = tl.where(fake_keys_mask[None], -float('inf'), intermediate_result) # TODO - masking bro!!
+        if is_causal:
+            query_global_ids = (tl.arange(0, Q_TILE_SIZE) + Q_TILE_SIZE * query_tile_index)[:, None]
+            key_global_ids = (tl.arange(0, K_TILE_SIZE) + K_TILE_SIZE * j)[None]
+            causal_mask = key_global_ids > query_global_ids
+            intermediate_result = tl.where(causal_mask, intermediate_result -1e6, intermediate_result)
+            
+        intermediate_result = tl.where(fake_keys_mask[None], -float('inf'), intermediate_result)
 
         m_prev = m
         m = tl.maximum(m, tl.max(intermediate_result, axis=1))
 
         intermediate_result = tl.exp(intermediate_result - m[:, None])
+
         l = tl.exp(m_prev - m) * l + tl.sum(intermediate_result, axis=1)
         output = tl.exp(m_prev - m)[:, None] * output + tl.dot(intermediate_result.to(v_tile.dtype), v_tile)
 
@@ -181,17 +189,18 @@ def flash_fwd_kernel(
 
 class TritonFlashAttention(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_residual: bool = False):
+    def forward(ctx, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, is_causal: bool = False):
         scale = 1 / math.sqrt(Q.size(dim=-1))
         *input_shape, seq_len_q, d = Q.size()
         O = torch.empty_like(Q)
-        L = torch.empty(*input_shape, dtype=Q.dtype, device=Q.device)
+        L = torch.empty((*input_shape, seq_len_q), dtype=Q.dtype, device=Q.device)
 
         q_tile_size = 32
         k_tile_size = 32
 
         ctx.q_tile_size = q_tile_size
         ctx.k_tile_size = k_tile_size
+        ctx.is_causal = is_causal
 
         flash_fwd_kernel[(input_shape[0], triton.cdiv(seq_len_q, q_tile_size))](
             Q, K, V,
@@ -206,6 +215,7 @@ class TritonFlashAttention(torch.autograd.Function):
             d,
             q_tile_size,
             k_tile_size,
+            is_causal
         )
 
         ctx.save_for_backward(L, Q, K, V, O)
