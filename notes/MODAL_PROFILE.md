@@ -119,7 +119,7 @@ The launcher uploads only the project/package files it needs. It does not upload
 
 ## GPU and failure handling
 
-The launcher currently requests one B200, four CPU cores, 32 GiB host RAM, and a 30-minute function timeout. Host RAM is distinct from GPU VRAM. The B200 gives more VRAM for large FP32 runs, but fitting the 10B full-training case is not guaranteed; activations, optimizer state, and temporary allocations also occupy VRAM.
+The end-to-end launcher (`modal_profile.py`) currently requests one H200, four CPU cores, 32 GiB host RAM, and a 30-minute function timeout. Host RAM is distinct from GPU VRAM. Fitting the 10B full-training case is not guaranteed; activations, optimizer state, and temporary allocations also occupy VRAM. The separate attention launcher uses H200 with an H100 fallback; see [Attention benchmark](#attention-benchmark).
 
 Each size runs in a separate subprocess. A failed model's log is preserved and other selected sizes are attempted. If the profiler exits successfully but writes an empty or unexpected CSV or omits a requested memory snapshot, the launcher stops the sequence and reports that output validation failed. It never invents timing rows or changes their units.
 
@@ -130,6 +130,49 @@ GPU containers scale down after two idle seconds; the app runs on demand via `mo
 This file covers hosting and executing your existing end-to-end benchmark. It does not change the model, optimizer, timing logic, or assignment answers. A successful infrastructure check does not certify that the profiler's measurements are correct: review CUDA synchronization and output units separately for the assignment.
 
 Nsight Systems (2.1.4) is a separate profiling environment; `nsys` is not installed by this launcher. Profiler traces should be collected in separate runs from the end-to-end timing measurements.
+
+## Attention benchmark
+
+Run the existing `cs336_systems/profile_attention.py`, including its `__main__` entrypoint:
+
+```sh
+uv run --with modal modal run --profile surkovvv modal_attention.py
+```
+
+`modal_attention.py` reuses the image from `modal_common.py`, with dependencies installed from `uv.lock`, and runs the script using the project's remote virtual environment. Benchmark parameters and calculations come from the script itself. The wrapper accepts `--output` for the local log directory and `--use-torch-compile` to enable the script's compilation flag.
+
+To enable `torch.compile`:
+
+```sh
+uv run --with modal modal run --profile surkovvv modal_attention.py --use-torch-compile
+```
+
+Place the benchmark flag after the filename. Modal exposes the Python parameter `use_torch_compile` as `--use-torch-compile`; the wrapper forwards it to the profiler as `--use_torch_compile`. Omit the flag for the ordinary eager run. The selected mode is recorded in the log as `use_torch_compile=True` or `False`.
+
+The attention image adds `build-essential` for the C/C++ compiler tools used during compilation. See the [PyTorch system requirements](https://docs.pytorch.org/tutorials/intermediate/torch_compile_tutorial.html).
+
+The function requests one GPU with `gpu=["H200", "H100"]`: H200 first, with H100 as a fallback. It uses four CPU cores, 32 GiB host RAM, a 30-minute timeout, at most one container, and a two-second idle scale-down window.
+
+Stdout and stderr stream to Modal and are saved locally after the remote function returns:
+
+```text
+benches/modal_attention_runs/<run_id>.log
+```
+
+The log starts with the actual GPU model, VRAM, and driver version. A nonzero script exit code is reported after saving the log. This wrapper returns the log directly and does not use the `cs336-profile-results` Volume; that Volume belongs to `modal_profile.py`.
+
+The comparison uses two completed runs from 2026-11-15:
+
+| Mode | Modal run | Local log |
+| --- | --- | --- |
+| Without compilation | [ap-EAC4wwi4aTbzp1x6VJ238h](https://modal.com/apps/surkovvv/main/ap-EAC4wwi4aTbzp1x6VJ238h) | [Eager log](../benches/modal_attention_runs/20261115T185122Z-c20b4c37.log) |
+| With torch.compile | [ap-O2HCVfIFnWg5RQ3Acdrzmf](https://modal.com/apps/surkovvv/main/ap-O2HCVfIFnWg5RQ3Acdrzmf) | [Compiled log](../benches/modal_attention_runs/20261115T191800Z-52865488.log) |
+
+Both logs report **NVIDIA H100 80GB HBM3**, **81559 MiB VRAM**, and driver **610.57.04**. They match in GPU model, memory capacity, and driver; the logs do not identify the physical GPU device. Both completed all 20 combinations with 100 measured iterations each, without OOM. The compiled log explicitly records `use_torch_compile=True` and was verified against the Modal run output.
+
+See [the attention benchmark tables and paired charts](bench_attentions.md). Each chart row places the eager run on the left and the compiled run on the right, using the same axes and d_model colors for comparison.
+
+The table uses batch size 8, FP32 inputs, and 5 warmup iterations per combination. Forward and backward times are means in ms. Memory is the maximum allocated tensor memory sampled after forward and before backward, in MiB; it is not the peak over the complete pass.
 
 ## Shared environment and simple wrappers
 
