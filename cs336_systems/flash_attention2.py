@@ -61,16 +61,22 @@ class PyTorchFlashAttention(torch.autograd.Function):
         L = torch.cat(Ls, dim=-1)[..., :seq_len_q, :]
 
         ctx.save_for_backward(L, Q, K, V, O)
+        ctx.is_causal = is_causal
 
         return O
 
     @staticmethod
     @torch.compile
-    def backward(ctx, grad_outputs, is_causal: bool = False):
+    def backward(ctx, grad_outputs):
         L, Q, K, V, O = ctx.saved_tensors
         D = torch.sum(O * grad_outputs, dim=-1)
         factor = math.sqrt(Q.size(-1))
+
         S = Q @ K.transpose(-1, -2) / factor
+        if ctx.is_causal:
+            mask = torch.triu(torch.full(S.size(), float('-inf'), dtype=S.dtype, device=S.device), diagonal=1)
+            S = S + mask
+        
         P = torch.exp(S - L[..., None])
         dV = P.transpose(-1, -2) @ grad_outputs
         dS = P * (grad_outputs @ V.transpose(-1, -2) - D[..., None])
@@ -159,6 +165,7 @@ def flash_fwd_kernel(
         order=(0,)
     )
 
+    # dtype = Q_ptr.type.element_ty
     output = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
     l = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
     m = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32) + (-float('inf'))
@@ -195,7 +202,7 @@ def flash_fwd_kernel(
     output = output / l[:, None]
     l = m + tl.log(l)
     
-    tl.store(O_block_ptr, output.to(O_block_ptr.type.element_ty), boundary_check=(0, 1))
+    tl.store(O_block_ptr, output.to(Q_ptr.type.element_ty), boundary_check=(0, 1))
     tl.store(L_block_ptr, l, boundary_check=(0,))
 
 
@@ -205,7 +212,7 @@ class TritonFlashAttention(torch.autograd.Function):
         scale = 1 / math.sqrt(Q.size(dim=-1))
         *input_shape, seq_len_q, d = Q.size()
         O = torch.empty_like(Q)
-        L = torch.empty((*input_shape, seq_len_q), dtype=Q.dtype, device=Q.device)
+        L = torch.empty((*input_shape, seq_len_q), dtype=torch.float32, device=Q.device)
 
         q_tile_size = 32
         k_tile_size = 32
@@ -235,5 +242,5 @@ class TritonFlashAttention(torch.autograd.Function):
         return O
 
     @staticmethod
-    def backward(ctx, *grad_outputs):
-        return super().backward(ctx, *grad_outputs)
+    def backward(ctx, grad_outputs):
+        return PyTorchFlashAttention.backward(ctx, grad_outputs)
