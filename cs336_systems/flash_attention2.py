@@ -66,7 +66,7 @@ class PyTorchFlashAttention(torch.autograd.Function):
         return O
 
     @staticmethod
-    @torch.compile
+    # @torch.compile
     def backward(ctx, grad_outputs):
         L, Q, K, V, O = ctx.saved_tensors
         D = torch.sum(O * grad_outputs, dim=-1)
@@ -77,7 +77,7 @@ class PyTorchFlashAttention(torch.autograd.Function):
             mask = torch.triu(torch.full(S.size(), float('-inf'), dtype=S.dtype, device=S.device), diagonal=1)
             S = S + mask
         
-        P = torch.exp(S - L[..., None])
+        P = torch.exp(S - L[..., None]).to(S.dtype)
         dV = P.transpose(-1, -2) @ grad_outputs
         dS = P * (grad_outputs @ V.transpose(-1, -2) - D[..., None])
         dQ = dS @ K / factor
